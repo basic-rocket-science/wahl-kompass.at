@@ -2,9 +2,11 @@ from datetime import datetime
 import requests
 import json
 
+base_url = "https://www.parlament.gv.at"
+
 # TODO:
 # * check if results don't exceed 10000 results (we can't access more after that => restrict amount via date range)
-def _get_page(page=1, page_size=100, date_begin="2000-01-01", date_end="2000-12-31"): 
+def _get_page(page=1, page_size=100, date_begin="2000-01-01", date_end="2000-12-31"):
     json_data = "{ 'searchType': ['all'], \
                    'searchScope': ['all'], \
                    'date_range': [ '" + datetime.strptime(date_begin, "%Y-%m-%d").isoformat() + ".000Z', \
@@ -12,7 +14,8 @@ def _get_page(page=1, page_size=100, date_begin="2000-01-01", date_end="2000-12-
                    'category': ['Protokolle'] }"
     headers = { 'Content-Type': 'application/json' }
 
-    api = "https://www.parlament.gv.at/Filter/api/filterform/vts/data?page={page}&pagesize={page_size}" \
+    # more than 100 for pagesize is not possible as not more data is returned
+    api = base_url + "/Filter/api/filterform/vts/data?page={page}&pagesize={page_size}" \
           .format(page=page, page_size=page_size)
     
     response = requests.post(api, headers=headers, data=json_data).json()
@@ -24,7 +27,8 @@ def _get_page(page=1, page_size=100, date_begin="2000-01-01", date_end="2000-12-
                                                                                           date_begin=date_begin,
                                                                                           date_end=date_end) }
 
-def get_results(page_size):
+def get_results():
+    page_size=100
     results = { 'count': 0, 'protocols': [] }
 
     # from 1996 onwards there is enough data
@@ -42,10 +46,26 @@ def get_results(page_size):
 
         results['count'] += count
         for page in range(1, count // page_size + 2):
-            response = _get_page(page)['response']
+            response = _get_page(page, page_size, date_begin, date_end)['response']
 
-            results['protocols'].append(response['rows'])
+            results['protocols'].extend(response['rows'])
         
         print(year, "cumulative results", results['count'])
+    
+    return results
 
-get_results(10000)
+def download_results(file_path):
+    results = get_results()
+
+    print(len(results['protocols']))
+
+    for result in results['protocols']:
+        link = result['link']
+        file_name = "{file_path}{name}".format(file_path=file_path, name='_'.join(link.split('/')[-4:]))
+        response = requests.get(base_url + link)
+
+        with open(file_name, 'w') as fd:
+            fd.write(response.text)
+
+
+download_results("protocols/")
