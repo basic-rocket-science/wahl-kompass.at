@@ -1,11 +1,11 @@
 from datetime import datetime
 import requests
 import json
+import os.path
+import pickle
 
 base_url = "https://www.parlament.gv.at"
 
-# TODO:
-# * check if results don't exceed 10000 results (we can't access more after that => restrict amount via date range)
 def _get_page(page=1, page_size=100, date_begin="2000-01-01", date_end="2000-12-31"):
     json_data = "{ 'searchType': ['all'], \
                    'searchScope': ['all'], \
@@ -50,22 +50,49 @@ def get_results():
 
             results['protocols'].extend(response['rows'])
         
+        # show progress
         print(year, "cumulative results", results['count'])
-    
     return results
 
-def download_results(file_path):
-    results = get_results()
+def download_results():
+    results = None
+    results_file = "results.pickle"
 
-    print(len(results['protocols']))
+    # load pickle file if catalog is already downloaded
+    if os.path.isfile(results_file):
+        results = pickle.load(open(results_file, 'rb'))
+    else:
+        results = get_results()
+        pickle.dump(results, open(results_file, 'wb'))
 
-    for result in results['protocols']:
+    print(results['count'], "protocols found on parlament.gv.at")
+
+    # loop through results with counter
+    for i, result in zip(range(results['count']), results['protocols']):
+        # show progress
+        if i % 1000 == 0: print(i, "of", results['count'], "protocols downloaded")
+
         link = result['link']
-        file_name = "{file_path}{name}".format(file_path=file_path, name='_'.join(link.split('/')[-4:]))
-        response = requests.get(base_url + link)
 
-        with open(file_name, 'w') as fd:
-            fd.write(response.text)
+        # get folder and file names
+        dir_name = '/'.join(link.replace('SEITE_', '')[1:].split('/')[0:-1]) + '/'
+        file_name = link.replace('SEITE_', '').split('/')[-1]
 
+        # create dir recursively
+        if not os.path.exists(dir_name): os.makedirs(dir_name, exist_ok=True)
 
-download_results("protocols/")
+        # check if file already exists
+        if os.path.isfile(dir_name+file_name): continue
+
+        # download file or show exception but continue
+        try:
+            response = requests.get(base_url + link)
+
+            with open(dir_name+file_name, 'w') as fd:
+                fd.write(response.text)
+        except Exception as ex:
+            print(ex)
+            print(file_name + " not downloaded")
+        
+
+download_results()
